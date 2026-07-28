@@ -1192,7 +1192,7 @@ const Game = (()=>{
       tags++;
       updateHud();
       playerEl.classList.remove('tagged-flash'); void playerEl.offsetWidth; playerEl.classList.add('tagged-flash');
-      if(tags >= MAX_TAGS){ds
+      if(tags >= MAX_TAGS){
         endGame(false, 'You were tagged 3 times!');
         return;
       }
