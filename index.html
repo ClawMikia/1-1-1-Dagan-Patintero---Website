@@ -623,6 +623,35 @@ button{font-family:inherit}
    ============================================================ */
 'use strict';
 
+/* ---------- sound effects (assets/sounds/*.wav) — background music is intentionally NOT handled here ---------- */
+const Sfx = (()=>{
+  const BASE = 'assets/sounds/';
+  const NAMES = ['ui_tap','nav_switch','modal_open','modal_close','select','avatar_pick','stepper_up','stepper_down','stepper_limit',
+    'dice_tick','dice_land','guards_summon','theme_toggle','game_start','step','bump','guard_step','tag','crossing',
+    'timer_warn','timer_tick','win','lose'];
+  const MASTER = 0.8;
+  const bank = {};
+  NAMES.forEach(n=>{
+    try{ const a = new Audio(BASE+n+'.wav'); a.preload = 'auto'; bank[n] = a; }catch(e){}
+  });
+  function play(name, opts){
+    const base = bank[name];
+    if(!base) return;
+    const o = opts || {};
+    try{
+      const a = base.cloneNode();
+      a.volume = Math.max(0, Math.min(1, (o.vol===undefined ? 1 : o.vol) * MASTER));
+      if(o.rate && o.rate !== 1){
+        a.playbackRate = o.rate;
+        a.preservesPitch = false; a.mozPreservesPitch = false; a.webkitPreservesPitch = false;
+      }
+      const p = a.play();
+      if(p && p.catch) p.catch(()=>{});   // browsers block audio until the first user gesture
+    }catch(e){}
+  }
+  return { play };
+})();
+
 /* ---------- asset lists ---------- */
 const SIDE_A = Array.from({length:24},(_,i)=>`assets/sideA/sideA (${i+1}).png`);
 const SIDE_B = Array.from({length:20},(_,i)=>`assets/sideB/sideB (${i+1}).png`);
@@ -696,7 +725,7 @@ const Grounds = {
       const d = document.createElement('div');
       d.className = 'ground-opt' + (this.selected===src ? ' selected' : '');
       d.innerHTML = `<img src="${src}" alt="court background"><span class="ground-tag">Court</span>`;
-      d.onclick = ()=>{ this.selected = src; this.render(); };
+      d.onclick = ()=>{ Sfx.play('select'); this.selected = src; this.render(); };
       gallery.appendChild(d);
     });
 
@@ -716,6 +745,7 @@ const Theme = {
   toggle(){
     const html = document.documentElement;
     const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    Sfx.play('theme_toggle');
     html.setAttribute('data-theme', next);
     document.getElementById('themeToggle').textContent = next === 'dark' ? '☀️' : '🌙';
   }
@@ -723,7 +753,8 @@ const Theme = {
 
 /* ---------- navigation ---------- */
 const Nav = {
-  go(name){
+  go(name, silent){
+    if(!silent) Sfx.play('nav_switch');
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.getElementById('screen-'+name).classList.add('active');
     document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
@@ -733,6 +764,7 @@ const Nav = {
     window.scrollTo({top:0,behavior:'smooth'});
   },
   toggleMenu(){
+    Sfx.play('ui_tap');
     document.getElementById('hamburger').classList.toggle('active');
     document.getElementById('navLinks').classList.toggle('open');
   },
@@ -744,13 +776,16 @@ const Nav = {
 
 /* ---------- modals ---------- */
 const Modals = {
-  open(id){
+  open(id, silent){
     const el = document.getElementById(id);
+    if(!silent) Sfx.play('modal_open');
     el.classList.remove('closing');
     el.classList.add('active');
   },
   close(id){
     const el = document.getElementById(id);
+    if(!el.classList.contains('active') || el.classList.contains('closing')) return;
+    Sfx.play('modal_close');
     el.classList.add('closing');
     setTimeout(()=>{ el.classList.remove('active','closing'); }, 240);
   }
@@ -794,6 +829,7 @@ const Setup = {
       d.className = 'avatar-opt' + (this.playerAvatar===src ? ' selected' : '');
       d.innerHTML = `<img src="${src}" alt="avatar">`;
       d.onclick = ()=>{
+        Sfx.play('avatar_pick');
         this.chosenPlayer = src;
         this.applyPlayerAvatar(src);
         d.classList.add('selected');
@@ -824,6 +860,7 @@ const Setup = {
     const spin = setInterval(()=>{
       img.src = SIDE_A[Math.floor(Math.random()*SIDE_A.length)];
       ticks++;
+      Sfx.play('dice_tick', {vol:.55, rate:1 + Math.min(ticks,10)*0.025});
     }, 90);
     setTimeout(()=>{
       clearInterval(spin);
@@ -831,13 +868,15 @@ const Setup = {
       img.src = pick;
       img.className = 'landed';
       caption.textContent = 'Bahala na — this one\'s you!';
+      Sfx.play('dice_land');
       this.chosenPlayer = pick;
       this.applyPlayerAvatar(pick);
       setTimeout(()=> Modals.close('surpriseModal'), 900);
     }, 900);
   },
 
-  randomizeGuards(){
+  randomizeGuards(silent){
+    if(silent !== true) Sfx.play('guards_summon');
     const shuffled = [...SIDE_B].sort(()=>Math.random()-0.5);
     this.guardAvatars = shuffled.slice(0, this.guardCount);
     document.getElementById('cpuImg').src = this.guardAvatars[0];
@@ -861,6 +900,7 @@ const Setup = {
       </div>`).join('');
     grid.querySelectorAll('.diff-opt').forEach(el=>{
       el.onclick = ()=>{
+        Sfx.play('select');
         this.difficulty = DIFFICULTIES.find(d=>d.id===el.dataset.id);
         this.renderDifficulty();
       };
@@ -874,6 +914,7 @@ const Setup = {
       <button type="button" data-id="${s.id}" class="${this.courtSize.id===s.id?'active':''}">${s.label} (${s.size}×${s.size})</button>`).join('');
     control.querySelectorAll('button').forEach(btn=>{
       btn.onclick = ()=>{
+        Sfx.play('select');
         this.courtSize = COURT_SIZES.find(s=>s.id===btn.dataset.id);
         this.renderCourtSizes();
       };
@@ -886,11 +927,12 @@ const Setup = {
   },
   stepGuards(delta){
     const next = this.guardCount + delta;
-    if(next < GUARD_MIN || next > GUARD_MAX) return;
+    if(next < GUARD_MIN || next > GUARD_MAX){ Sfx.play('stepper_limit'); return; }
+    Sfx.play(delta > 0 ? 'stepper_up' : 'stepper_down');
     this.guardCount = next;
     this.renderGuardStepper();
     // guard avatars need to be re-rolled to match the new count
-    if(this.guardAvatars.length) this.randomizeGuards();
+    if(this.guardAvatars.length) this.randomizeGuards(true);
   },
 
   flashNeed(id){
@@ -1087,12 +1129,13 @@ const Game = (()=>{
   function start(){
     if(!Setup.playerAvatar || Setup.guardAvatars.length!==Setup.guardCount){ return; }
     configureRound();
+    Sfx.play('game_start');
     crossings = 0; tags = 0; timeLeft = TIME_LIMIT; direction = 'up';
     player = {r:HOME_BOTTOM, c:Math.floor(SIZE/2)};
     active = true;
     lastTagAt = 0;
 
-    Nav.go('game');
+    Nav.go('game', true);
     buildStaticGrid();
     initGuards();
     renderPlayer();
@@ -1118,6 +1161,8 @@ const Game = (()=>{
     if(!active) return;
     timeLeft--;
     updateHud();
+    if(timeLeft===20) Sfx.play('timer_warn');
+    else if(timeLeft<=10 && timeLeft>0) Sfx.play('timer_tick', {rate: timeLeft<=3 ? 1.3 : 1});
     const pct = Math.max(0,(timeLeft/TIME_LIMIT)*100);
     const fill = document.getElementById('timerFill');
     fill.style.width = pct+'%';
@@ -1132,7 +1177,8 @@ const Game = (()=>{
   function movePlayer(dr,dc){
     if(!active) return;
     const nr = player.r+dr, nc = player.c+dc;
-    if(!inBounds(nr,nc)) return;
+    if(!inBounds(nr,nc)){ Sfx.play('bump'); return; }
+    Sfx.play('step', {vol:.8, rate:.94 + Math.random()*.12});
     player = {r:nr,c:nc};
     renderPlayer();
     checkTagCollision();
@@ -1149,6 +1195,7 @@ const Game = (()=>{
         endGame(true);
         return;
       }
+      Sfx.play('crossing');
       direction = direction==='up' ? 'down' : 'up';
       updateHud();
     }
@@ -1179,6 +1226,7 @@ const Game = (()=>{
       g.pos = next;
       placePiece(g.el, next.r, next.c);
     });
+    Sfx.play('guard_step', {vol:.3});
     checkTagCollision();
   }
 
@@ -1190,6 +1238,7 @@ const Game = (()=>{
     if(hit){
       lastTagAt = now;
       tags++;
+      Sfx.play('tag');
       updateHud();
       playerEl.classList.remove('tagged-flash'); void playerEl.offsetWidth; playerEl.classList.add('tagged-flash');
       if(tags >= MAX_TAGS){
@@ -1206,14 +1255,15 @@ const Game = (()=>{
   function endGame(won, reason){
     active = false;
     clearInterval(guardTimer); clearInterval(clockTimer);
+    setTimeout(()=>Sfx.play(won ? 'win' : 'lose'), 300);
     if(won){
       document.getElementById('winAvatar').src = Setup.playerAvatar;
       document.getElementById('winTimeLeft').textContent = `Finished with ${timeLeft}s to spare.`;
-      setTimeout(()=>Modals.open('winModal'), 500);
+      setTimeout(()=>Modals.open('winModal', true), 500);
     } else {
       document.getElementById('loseReason').textContent = reason || 'The guards got you.';
       document.getElementById('loseAvatar').src = guards[0] ? guards[0].avatar : Setup.guardAvatars[0];
-      setTimeout(()=>Modals.open('loseModal'), 500);
+      setTimeout(()=>Modals.open('loseModal', true), 500);
     }
   }
 
